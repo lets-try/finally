@@ -1,0 +1,18 @@
+{
+    "name": "lets-try-tools",
+    "owner": {
+        "name": "lets-try",
+        "email": "lets-try@example.com"
+    },
+    "plugins": [
+        {
+            "name": "independent-reviewer",
+            "source": "./planning/independent-reviewer",
+            "description": "Carry out independent review for all changes since last commit",
+            "version": "1.0.0",
+            "author": {
+                "name": "lets-try"
+            }
+        }
+    ]
+}

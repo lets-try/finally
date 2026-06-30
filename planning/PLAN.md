@@ -281,7 +281,7 @@ All tables include a `user_id` column defaulting to `"default"`. This is hardcod
 
 ## 9. LLM Integration
 
-When writing code to make calls to LLMs, use cerebras-inference skill to use LiteLLM via OpenRouter to the `openrouter/openai/gpt-oss-120b` model with Cerebras as the inference provider. Structured Outputs should be used to interpret the results.
+When writing code to make calls to LLMs, use cerebras-inference skill to use LiteLLM via OpenRouter to the `openrouter/openai/gpt-oss-20b` model with Cerebras as the inference provider. Structured Outputs should be used to interpret the results.
 
 There is an OPENROUTER_API_KEY in the .env file in the project root.
 
@@ -454,3 +454,47 @@ The container is designed to deploy to AWS App Runner, Render, or any container 
 - Portfolio visualization: heatmap renders with correct colors, P&L chart has data points
 - AI chat (mocked): send a message, receive a response, trade execution appears inline
 - SSE resilience: disconnect and verify reconnection
+
+---
+
+## 13. Documentation Review — Questions, Clarifications & Simplifications
+
+> Added 2026-06-25 during a doc review pass. This section collects open questions, gaps, and simplification opportunities for the remaining build (everything except the completed market data subsystem). Items are grouped by severity; resolve the "Gaps" before implementation starts.
+
+### Gaps & Inconsistencies (resolve before building)
+
+1. **"Daily change %" has no defined baseline.** §2 (watchlist), §10 (watchlist panel & positions table) all show a "daily change %" / "% change", but nothing in the data model defines a daily open or previous close. The simulator's `PriceUpdate` only carries `previous_price` (the prior tick, ~500ms ago), not a daily baseline. **Decide:** is "% change" measured from (a) the seed/open price captured at first stream, (b) the price at page load, or (c) the prior tick? Each gives a very different number. Recommend capturing a per-ticker "session open" price (first cache value) and computing change against that, and naming it accordingly (it isn't really "daily").
+
+2. **No historical price source for the main chart.** §10 says the main chart shows "price over time" for the selected ticker, but the only price data is the SSE stream accumulated since page load (same as sparklines). There is no `/api/stream` history endpoint or stored price series. **Confirm:** the main chart is also built from in-session SSE data (so it's empty on first load and resets on refresh). If a richer chart is wanted, we'd need a price-history buffer or endpoint — currently unspecified.
+
+3. **Unknown tickers in simulator mode.** §8 allows `POST /api/watchlist {ticker}` and the LLM can add arbitrary tickers (e.g. "PYPL" in the §9 example). The simulator (`seed_prices.py`) only defines seed prices / GBM params / correlation groups for the 10 defaults. **Define the behavior:** when a ticker with no seed data is added, does the simulator invent a seed price (e.g. random in a plausible range, default volatility, cross-group correlation)? Should add-ticker validate against a known universe and reject unknowns? This needs a rule for both simulator and Massive (real-symbol validation) paths.
+
+4. **Position tickers must stay priced even if removed from the watchlist.** If a user holds AAPL but removes it from the watchlist, portfolio valuation and P&L still need AAPL's live price. §6 says the poller/cache tracks "the union of all watched tickers." **Clarify** that the priced set = watchlist ∪ position tickers, and that removing a held ticker from the watchlist does not stop its pricing. Otherwise the positions table and heatmap go stale for sold-down-but-still-held names.
+
+5. **SSE cadence vs. change-detection mismatch.** §6 describes SSE pushing "for all tickers ... at a regular cadence (~500ms)", but the implemented `stream.py` uses version-based change detection (only changed tickers are emitted). Update §6 to match the built behavior (push on change, not a fixed full-snapshot cadence), and specify whether an initial full snapshot is sent on connect plus a periodic heartbeat/keepalive comment to hold the connection open.
+
+6. **Trade error response shape is undefined.** §8/§9 say failed trades return an error (insufficient cash/shares), but the response format isn't specified. **Define** the status code and body for `POST /api/portfolio/trade` failures (e.g. `400` with `{"error": "..."}`), since both the trade bar and the chat flow depend on parsing it consistently.
+
+7. **`watchlist_changes.action` enum.** The §9 schema example only shows `"add"`, but the prose mentions add/remove. State explicitly that `action` ∈ `{"add", "remove"}` so the structured-output schema and validation are unambiguous.
+
+### Questions / Clarifications
+
+8. **Model choice — `gpt-oss-20b`.** §9 was just changed from `gpt-oss-120b` to `gpt-oss-20b`. Confirm the 20b model reliably produces valid structured JSON for the trade/watchlist schema via Cerebras. The smaller model is faster/cheaper but more prone to malformed structured output; the §12 "malformed response" handling becomes more important if we stay on 20b.
+
+9. **Live portfolio value vs. server snapshots.** The header shows portfolio total value "updating live" (§10), but `/api/portfolio` and `portfolio_snapshots` are server-computed. Confirm the frontend computes the live header value client-side from SSE prices × positions, while the server snapshot (every 30s + post-trade) feeds only the P&L chart. Worth stating to avoid two diverging "total value" numbers.
+
+10. **Conversation history window.** §9 step 2 "loads recent conversation history" — specify a bound (e.g. last N messages or a token budget) to keep the prompt size and latency predictable.
+
+11. **Chat without an API key.** §5 marks `OPENROUTER_API_KEY` as "required." Should the app degrade gracefully (auto-enable `LLM_MOCK` or disable the chat panel with a notice) when it's absent, so the rest of the terminal still runs? Useful for first-run UX.
+
+12. **Snapshot growth / history endpoint size.** `portfolio_snapshots` accrues a row every 30s indefinitely (2,880/day). `GET /api/portfolio/history` will grow unbounded. Consider a retention window or downsampling for the P&L chart query.
+
+13. **Frontend dev workflow.** §11 covers the production static export only. Note the local dev story for the Frontend Engineer (e.g. `next dev` on :3000 proxying `/api` to the backend on :8000), since static-export-only would make iterating on UI painful.
+
+### Simplification Opportunities
+
+14. **Pick one charting library.** §10 offers "Lightweight Charts or Recharts." Choosing one removes ambiguity for the Frontend agent. Recharts covers the line chart, sparklines, *and* the treemap heatmap in one React-native library; Lightweight Charts is canvas-fast for the financial chart but has no treemap. Recommend standardizing on Recharts unless chart performance proves insufficient.
+
+15. **Three ways to run the app.** `docker-compose.yml` (optional), `scripts/start_*` , and `docker-compose.test.yml` overlap. Consider designating the start scripts as the single supported entry point and dropping the optional root `docker-compose.yml` to reduce maintenance surface.
+
+ 

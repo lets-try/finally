@@ -66,6 +66,45 @@ class TestPriceCache:
         cache.update("AAPL", 191.00)
         assert cache.version == v0 + 2
 
+    def test_changed_since_returns_only_updated(self):
+        """changed_since returns only tickers updated after the given version."""
+        cache = PriceCache()
+        cache.update("AAPL", 190.00)
+        v_after_aapl = cache.version
+        cache.update("GOOGL", 175.00)
+
+        changed = cache.changed_since(v_after_aapl)
+        assert set(changed.keys()) == {"GOOGL"}
+
+    def test_changed_since_zero_returns_all(self):
+        """changed_since(0) returns the full current set."""
+        cache = PriceCache()
+        cache.update("AAPL", 190.00)
+        cache.update("GOOGL", 175.00)
+        changed = cache.changed_since(0)
+        assert set(changed.keys()) == {"AAPL", "GOOGL"}
+
+    def test_changed_since_current_version_is_empty(self):
+        """Nothing has changed since the latest version."""
+        cache = PriceCache()
+        cache.update("AAPL", 190.00)
+        assert cache.changed_since(cache.version) == {}
+
+    def test_changed_since_after_repeated_update(self):
+        """A re-updated ticker reappears in changed_since."""
+        cache = PriceCache()
+        cache.update("AAPL", 190.00)
+        v = cache.version
+        cache.update("AAPL", 191.00)
+        assert set(cache.changed_since(v).keys()) == {"AAPL"}
+
+    def test_remove_clears_ticker_version(self):
+        """A removed ticker no longer appears in changed_since."""
+        cache = PriceCache()
+        cache.update("AAPL", 190.00)
+        cache.remove("AAPL")
+        assert cache.changed_since(0) == {}
+
     def test_get_price_convenience(self):
         """Test the convenience get_price method."""
         cache = PriceCache()

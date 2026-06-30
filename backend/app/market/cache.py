@@ -19,6 +19,9 @@ class PriceCache:
         self._prices: dict[str, PriceUpdate] = {}
         self._lock = Lock()
         self._version: int = 0  # Monotonically increasing; bumped on every update
+        # Per-ticker stamp of the global version at that ticker's last update.
+        # Lets SSE clients pull only the tickers that changed since they last read.
+        self._ticker_versions: dict[str, int] = {}
 
     def update(self, ticker: str, price: float, timestamp: float | None = None) -> PriceUpdate:
         """Record a new price for a ticker. Returns the created PriceUpdate.
@@ -39,6 +42,7 @@ class PriceCache:
             )
             self._prices[ticker] = update
             self._version += 1
+            self._ticker_versions[ticker] = self._version
             return update
 
     def get(self, ticker: str) -> PriceUpdate | None:
@@ -56,10 +60,25 @@ class PriceCache:
         update = self.get(ticker)
         return update.price if update else None
 
+    def changed_since(self, since_version: int) -> dict[str, PriceUpdate]:
+        """Snapshot of only the tickers updated after `since_version`.
+
+        Powers change-driven SSE: a client passes the version it last saw and
+        receives just the tickers that moved since, rather than the full set.
+        Returns a shallow copy.
+        """
+        with self._lock:
+            return {
+                ticker: update
+                for ticker, update in self._prices.items()
+                if self._ticker_versions.get(ticker, 0) > since_version
+            }
+
     def remove(self, ticker: str) -> None:
         """Remove a ticker from the cache (e.g., when removed from watchlist)."""
         with self._lock:
             self._prices.pop(ticker, None)
+            self._ticker_versions.pop(ticker, None)
 
     @property
     def version(self) -> int:

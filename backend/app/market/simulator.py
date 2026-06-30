@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import math
 import random
@@ -23,6 +24,23 @@ from .seed_prices import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Bounds for synthetic seed prices invented for unknown tickers
+SYNTHETIC_SEED_MIN = 50.0
+SYNTHETIC_SEED_MAX = 300.0
+
+
+def synthetic_seed_price(ticker: str) -> float:
+    """Deterministic starting price for a ticker without a predefined seed.
+
+    Derived from a SHA-256 hash of the symbol so the same ticker always starts
+    at the same price across restarts and test runs (reproducible demos/tests).
+    Python's built-in hash() is salted per-process and cannot be used here.
+    """
+    digest = hashlib.sha256(ticker.encode("utf-8")).hexdigest()
+    fraction = int(digest[:8], 16) / 0xFFFFFFFF  # in [0, 1]
+    span = SYNTHETIC_SEED_MAX - SYNTHETIC_SEED_MIN
+    return round(SYNTHETIC_SEED_MIN + fraction * span, 2)
 
 
 class GBMSimulator:
@@ -148,7 +166,7 @@ class GBMSimulator:
         if ticker in self._prices:
             return
         self._tickers.append(ticker)
-        self._prices[ticker] = SEED_PRICES.get(ticker, random.uniform(50.0, 300.0))
+        self._prices[ticker] = SEED_PRICES.get(ticker) or synthetic_seed_price(ticker)
         self._params[ticker] = TICKER_PARAMS.get(ticker, dict(DEFAULT_PARAMS))
 
     def _rebuild_cholesky(self) -> None:

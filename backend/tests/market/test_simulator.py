@@ -1,7 +1,12 @@
 """Tests for GBMSimulator."""
 
 from app.market.seed_prices import SEED_PRICES
-from app.market.simulator import GBMSimulator
+from app.market.simulator import (
+    SYNTHETIC_SEED_MAX,
+    SYNTHETIC_SEED_MIN,
+    GBMSimulator,
+    synthetic_seed_price,
+)
 
 
 class TestGBMSimulator:
@@ -52,12 +57,24 @@ class TestGBMSimulator:
         sim = GBMSimulator(tickers=["AAPL"])
         sim.remove_ticker("NOPE")  # Should not raise
 
-    def test_unknown_ticker_gets_random_seed_price(self):
-        """Test that unknown tickers get random seed prices."""
+    def test_unknown_ticker_gets_synthetic_seed_in_range(self):
+        """Unknown tickers get a synthetic seed within the configured bounds."""
         sim = GBMSimulator(tickers=["ZZZZ"])
         price = sim.get_price("ZZZZ")
         assert price is not None
-        assert 50.0 <= price <= 300.0
+        assert SYNTHETIC_SEED_MIN <= price <= SYNTHETIC_SEED_MAX
+
+    def test_unknown_ticker_seed_is_deterministic(self):
+        """Same unknown ticker seeds to the same price across simulators."""
+        sim1 = GBMSimulator(tickers=["ZZZZ"])
+        sim2 = GBMSimulator(tickers=["ZZZZ"])
+        assert sim1.get_price("ZZZZ") == sim2.get_price("ZZZZ")
+        # And matches the standalone helper used to derive it
+        assert sim1.get_price("ZZZZ") == synthetic_seed_price("ZZZZ")
+
+    def test_synthetic_seed_differs_across_tickers(self):
+        """Different symbols generally map to different synthetic seeds."""
+        assert synthetic_seed_price("ZZZZ") != synthetic_seed_price("QQQQ")
 
     def test_empty_step(self):
         """Test stepping with no tickers."""

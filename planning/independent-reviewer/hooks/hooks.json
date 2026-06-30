@@ -1,0 +1,15 @@
+{ 
+    "hooks": {
+        "Stop": [
+            {
+                "hooks": [
+                {
+                    "type": "command",
+                    "command": "codex exec \"review the the changes since last commit and write your feedback to the file named planning/REVIEW.md\"",
+                    "statusMessage": "Playing completion sound"
+                }
+                ]
+            }
+        ]
+    }
+}
